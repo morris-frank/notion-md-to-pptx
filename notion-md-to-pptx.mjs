@@ -7,7 +7,6 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import MarkdownIt from 'markdown-it';
 import PptxGenJS from 'pptxgenjs';
@@ -55,12 +54,11 @@ function parseArgs(argv) {
 function loadTheme(themePath) {
   const raw = fs.readFileSync(themePath, 'utf8');
   const t = JSON.parse(raw);
-  const req = ['meta', 'slide', 'fonts', 'typeScale', 'layout', 'text', 'blocks', 'fit'];
+  const req = ['meta', 'slide', 'fonts', 'typeScale', 'layout', 'text', 'blocks'];
   for (const k of req) {
     if (!t[k]) throw new Error(`Theme missing required section: ${k}`);
   }
   if (!t.slide.layout) t.slide.layout = 'LAYOUT_WIDE';
-  if (!t.fit.scales?.length) t.fit.scales = [1.0, 0.94, 0.89, 0.84];
   t.emojiMap = t.emojiMap || {};
   return t;
 }
@@ -161,7 +159,7 @@ function walkBlockTokens(tokens, i, md, ctx) {
   const blocks = [];
   while (i < tokens.length) {
     const t = tokens[i];
-    if (t.type === 'heading_open' && (t.tag === 'h1' || t.tag === 'h2' || t.tag === 'h3')) {
+    if (t.type === 'heading_open' && /^h[1-6]$/.test(t.tag)) {
       const inlineTok = tokens[i + 1];
       i += 3;
       blocks.push({
@@ -226,7 +224,16 @@ function walkBlockTokens(tokens, i, md, ctx) {
       continue;
     }
     console.warn(`[warn] Unsupported token ${t.type}, skipping`);
-    i++;
+    if (t.nesting === 1) {
+      let depth = 1;
+      i++;
+      while (i < tokens.length && depth > 0) {
+        depth += tokens[i].nesting;
+        i++;
+      }
+    } else {
+      i++;
+    }
   }
   return { blocks, i };
 }
@@ -361,19 +368,23 @@ function stripBom(s) {
 }
 
 /**
- * First `#` / `##` / `###` at line start (outside `<aside>`) becomes the slide title;
- * that line is removed. Lines before it stay in the body. If the first non-empty
- * line is not such a heading, title is empty and the full chunk is the body.
+ * First `#` / `##` / `###` at line start (outside `<aside>` and outside ``` fences)
+ * becomes the slide title; that line is removed. Lines before it stay in the body.
  */
 function peelSlideTitle(chunk) {
   const lines = String(chunk).replace(/\r\n/g, '\n').split('\n');
   let asideDepth = 0;
+  let inFence = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const opens = (line.match(/<aside\b/gi) || []).length;
     const closes = (line.match(/<\/aside>/gi) || []).length;
     asideDepth = Math.max(0, asideDepth + opens - closes);
-    if (asideDepth !== 0) continue;
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (asideDepth !== 0 || inFence) continue;
     if (!line.trim()) continue;
     const m = line.match(/^(#{1,3})\s+(.+)$/);
     if (m) {
@@ -426,14 +437,14 @@ async function ensureMathJax() {
   return _mj;
 }
 
-function svgDimsFromMathJax(svgXml, bodyPt, scale, maxW, display) {
+function svgDimsFromMathJax(svgXml, bodyPt, maxW, display) {
   let wEx = 2;
   let hEx = 1;
   const wm = svgXml.match(/width="([\d.]+)ex"/);
   const hm = svgXml.match(/height="([\d.]+)ex"/);
   if (wm) wEx = parseFloat(wm[1]);
   if (hm) hEx = parseFloat(hm[1]);
-  const exIn = (bodyPt / 72) * 0.5 * scale;
+  const exIn = (bodyPt / 72) * 0.5;
   let w = wEx * exIn;
   let h = hEx * exIn;
   if (display && w > maxW) {
@@ -442,7 +453,7 @@ function svgDimsFromMathJax(svgXml, bodyPt, scale, maxW, display) {
     h *= r;
   }
   if (!display) {
-    const cap = (bodyPt / 72) * scale * 1.25;
+    const cap = (bodyPt / 72) * 1.25;
     if (h > cap) {
       const r = cap / h;
       w *= r;
@@ -481,8 +492,32 @@ async function renderMathToSvgFile(tex, display, { cacheDir, offline }) {
   return { path: outPath };
 }
 
+function isBlockedFetchUrl(href) {
+  try {
+    const u = new URL(href);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return true;
+    const h = u.hostname.toLowerCase();
+    if (h === 'localhost' || h === '0.0.0.0' || h.endsWith('.localhost')) return true;
+    const ip = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (ip) {
+      const a = Number(ip[1]);
+      const b = Number(ip[2]);
+      if (a === 10) return true;
+      if (a === 127) return true;
+      if (a === 0) return true;
+      if (a === 169 && b === 254) return true;
+      if (a === 192 && b === 168) return true;
+      if (a === 172 && b >= 16 && b <= 31) return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 async function resolveAssetSrc(src, { cacheDir, offline, themeDir }) {
   if (/^https?:\/\//i.test(src)) {
+    if (isBlockedFetchUrl(src)) throw new Error(`Blocked URL (local/private): ${src}`);
     const hash = sha256(src);
     const dir = path.join(cacheDir, 'assets');
     fs.mkdirSync(dir, { recursive: true });
@@ -554,14 +589,14 @@ function inlinePlainText(inlines) {
     .join('');
 }
 
-async function estimateBlockHeight(block, theme, scale, contentW, cacheCtx, mathPrep) {
+async function estimateBlockHeight(block, theme, contentW, cacheCtx, mathPrep) {
   const ts = theme.typeScale;
   const ly = theme.layout;
-  const bodyPt = Math.max(ts.minBodyPt, ts.bodyPt * scale);
-  const bulletPt = Math.max(ts.minBodyPt, ts.bulletPt * scale);
-  const subPt = Math.max(ts.minBodyPt, ts.subheadingPt * scale * 0.98);
-  const codePt = Math.max(ts.minCodePt, ts.codeBlockPt * scale);
-  const icPt = Math.max(ts.minBodyPt, ts.inlineCodePt * scale);
+  const bodyPt = ts.bodyPt;
+  const bulletPt = ts.bulletPt;
+  const subPt = ts.subheadingPt;
+  const codePt = ts.codeBlockPt;
+  const icPt = ts.inlineCodePt;
 
   if (block.kind === 'paragraph') {
     const merged = mergeAdjacentText(block.inlines);
@@ -572,13 +607,12 @@ async function estimateBlockHeight(block, theme, scale, contentW, cacheCtx, math
       return (bodyPt / 72) * LH.body * lines;
     }
     const lineH = (bodyPt / 72) * LH.body;
-    const mathMaxH = (bodyPt / 72) * scale * 1.25;
     let x = 0;
     let line = 1;
     let rowH = lineH;
     for (const part of merged) {
       if (part.kind === 'math-inline') {
-        const m = await mathPrep(part.tex, false, scale);
+        const m = await mathPrep(part.tex, false);
         const w = m.wIn;
         const h = m.hIn;
         if (x + w > contentW && x > 0) {
@@ -633,7 +667,7 @@ async function estimateBlockHeight(block, theme, scale, contentW, cacheCtx, math
     return pad + lineH * lines + 0.05;
   }
   if (block.kind === 'math-block') {
-    const m = await mathPrep(block.tex, true, scale);
+    const m = await mathPrep(block.tex, true);
     return m.hIn + ly.mathBlockGap;
   }
   if (block.kind === 'callout') {
@@ -642,7 +676,7 @@ async function estimateBlockHeight(block, theme, scale, contentW, cacheCtx, math
     const innerW = contentW - pad * 2 - iconW;
     let innerH = 0;
     for (const b of block.blocks) {
-      innerH += (await estimateBlockHeight(b, theme, scale, innerW, cacheCtx, mathPrep)) + ly.calloutGap * 0.2;
+      innerH += (await estimateBlockHeight(b, theme, innerW, cacheCtx, mathPrep)) + ly.calloutGap * 0.2;
     }
     const iconBox = block.icon ? ly.calloutIconSize : 0;
     return pad + Math.max(innerH, iconBox) + 0.06;
@@ -650,11 +684,11 @@ async function estimateBlockHeight(block, theme, scale, contentW, cacheCtx, math
   return 0;
 }
 
-async function estimateSlideBlocksHeight(blocks, theme, scale, contentW, cacheCtx, mathPrep) {
+async function estimateSlideBlocksHeight(blocks, theme, contentW, cacheCtx, mathPrep) {
   const ly = theme.layout;
   let total = 0;
   for (const b of blocks) {
-    total += (await estimateBlockHeight(b, theme, scale, contentW, cacheCtx, mathPrep)) + ly.paragraphGap;
+    total += (await estimateBlockHeight(b, theme, contentW, cacheCtx, mathPrep)) + ly.paragraphGap;
   }
   return total;
 }
@@ -667,6 +701,20 @@ function hexNoHash(c) {
   return String(c).replace(/^#/, '');
 }
 
+/** Slide stub so renderBlock can measure heights without drawing (callout sizing). */
+const NOOP_SLIDE = {
+  addText() {
+    return this;
+  },
+  addImage() {
+    return this;
+  },
+  addShape() {
+    return this;
+  },
+  background: {},
+};
+
 async function renderDeck(deckAst, theme, pptx, opts) {
   const SLIDE_W = 13.333;
   const SLIDE_H = 7.5;
@@ -678,10 +726,9 @@ async function renderDeck(deckAst, theme, pptx, opts) {
 
   const contentW = SLIDE_W - ly.marginLeft - ly.marginRight;
   const contentBottom = SLIDE_H - ly.marginBottom;
-  const minTitlePtFloor = ts.minTitlePt != null ? ts.minTitlePt : 36;
 
   const mathPathCache = new Map();
-  const mathPrep = async (tex, display, dimScale = 1) => {
+  const mathPrep = async (tex, display) => {
     const k = `${display ? 'D' : 'I'}|${tex}`;
     let svgPath = mathPathCache.get(k);
     if (!svgPath) {
@@ -690,8 +737,7 @@ async function renderDeck(deckAst, theme, pptx, opts) {
       mathPathCache.set(k, svgPath);
     }
     const xml = fs.readFileSync(svgPath, 'utf8');
-    const bodyPt = Math.max(ts.minBodyPt, ts.bodyPt * dimScale);
-    return { path: svgPath, ...svgDimsFromMathJax(xml, bodyPt, dimScale, contentW * 0.92, display) };
+    return { path: svgPath, ...svgDimsFromMathJax(xml, ts.bodyPt, contentW * 0.92, display) };
   };
 
   for (let si = 0; si < deckAst.slides.length; si++) {
@@ -700,36 +746,16 @@ async function renderDeck(deckAst, theme, pptx, opts) {
     const contentTop0 = ly.marginTop + (hasTitle ? ly.titleHeight + ly.contentGapAfterTitle : 0);
     const contentHAvail = contentBottom - contentTop0;
 
-    let scaleUsed = 1;
-    let est = Infinity;
-    for (const s of theme.fit.scales) {
-      if (s < theme.fit.minScale - 1e-6) continue;
-      est = await estimateSlideBlocksHeight(slideSpec.blocks, theme, s, contentW, {}, mathPrep);
-      if (est <= contentHAvail) {
-        scaleUsed = s;
-        break;
-      }
-    }
-    if (est > contentHAvail) {
-      const label = slideSpec.title.trim() || '(no title)';
-      throw new Error(
-        `Slide ${si + 1} ("${label}") overflows content area after minimum scale (${theme.fit.minScale}). Estimated height ${est.toFixed(2)} in vs budget ${contentHAvail.toFixed(2)} in.`,
-      );
-    }
-
     const slide = pptx.addSlide();
     slide.background = { color: hexNoHash(theme.slide.background) };
 
-    // Slide title font (pt): max(theme min floor, typeScale.titlePt × fit scale). Not the same as
-    // layout.titleHeight — that is the text box height in inches; fontSize is separate in points.
     if (hasTitle) {
-      const titlePt = Math.max(minTitlePtFloor, ts.titlePt * scaleUsed);
       slide.addText(slideSpec.title, {
         x: ly.marginLeft,
         y: ly.marginTop,
         w: contentW,
         h: ly.titleHeight,
-        fontSize: titlePt,
+        fontSize: ts.titlePt,
         fontFace: theme.fonts.title,
         color: hexNoHash(theme.text.titleColor),
         bold: false,
@@ -748,14 +774,16 @@ async function renderDeck(deckAst, theme, pptx, opts) {
         fill: { color: '0088CC', transparency: 92 },
         line: { color: '0088CC', width: 0.5 },
       });
-      console.error(`[debug-layout] slide ${si + 1}: budget ${contentHAvail.toFixed(3)} in, est ${est.toFixed(3)} in, scale ${scaleUsed}`);
+      const est = await estimateSlideBlocksHeight(slideSpec.blocks, theme, contentW, {}, mathPrep);
+      console.error(
+        `[debug-layout] slide ${si + 1}: content box ${contentHAvail.toFixed(3)} in tall, estimated blocks ${est.toFixed(3)} in (overflow allowed)`,
+      );
     }
 
     for (const block of slideSpec.blocks) {
       y += await renderBlock(slide, block, {
         pptx,
         theme,
-        scale: scaleUsed,
         x0: ly.marginLeft,
         y0: y,
         w: contentW,
@@ -770,10 +798,10 @@ async function renderDeck(deckAst, theme, pptx, opts) {
 }
 
 async function renderParagraphMixed(slide, inlines, ctx) {
-  const { theme, scale, x0, y0, w, mathPrep } = ctx;
+  const { theme, x0, y0, w, mathPrep } = ctx;
   const ts = theme.typeScale;
-  const bodyPt = Math.max(ts.minBodyPt, ts.bodyPt * scale);
-  const icPt = Math.max(ts.minBodyPt, ts.inlineCodePt * scale);
+  const bodyPt = ts.bodyPt;
+  const icPt = ts.inlineCodePt;
   const lineH = (bodyPt / 72) * LH.body;
   const merged = mergeAdjacentText(inlines);
   const hasMath = merged.some((x) => x.kind === 'math-inline');
@@ -880,7 +908,7 @@ async function renderParagraphMixed(slide, inlines, ctx) {
 
   for (const part of merged) {
     if (part.kind === 'math-inline') {
-      const m = await mathPrep(part.tex, false, scale);
+      const m = await mathPrep(part.tex, false);
       let imW = m.wIn;
       let imH = m.hIn;
       if (x + imW > x0 + w && x > x0) {
@@ -948,7 +976,7 @@ async function renderParagraphMixed(slide, inlines, ctx) {
 }
 
 async function renderBlock(slide, block, ctx) {
-  const { theme, scale, x0, y0, w, cacheDir, offline, themeDir, mathPrep, pptx } = ctx;
+  const { theme, x0, y0, w, cacheDir, offline, themeDir, mathPrep, pptx } = ctx;
   const ts = theme.typeScale;
   const ly = theme.layout;
 
@@ -956,7 +984,7 @@ async function renderBlock(slide, block, ctx) {
     return await renderParagraphMixed(slide, block.inlines, { ...ctx, y0 });
   }
   if (block.kind === 'subheading') {
-    const subPt = Math.max(ts.minBodyPt, ts.subheadingPt * scale);
+    const subPt = ts.subheadingPt;
     const t = inlinePlainText(mergeAdjacentText(block.inlines));
     const lines = estimateWrappedLines(t, subPt, w);
     const h = (subPt / 72) * LH.sub * lines;
@@ -991,7 +1019,7 @@ async function renderBlock(slide, block, ctx) {
         runs.push({
           text: x.text,
           options: {
-            fontSize: Math.max(ts.minBodyPt, ts.inlineCodePt * scale),
+            fontSize: ts.inlineCodePt,
             fontFace: theme.fonts.mono,
             color: hexNoHash(theme.text.inlineCodeColor),
             highlight: hexNoHash(theme.blocks.inlineCode.fill),
@@ -1010,7 +1038,7 @@ async function renderBlock(slide, block, ctx) {
     return h;
   }
   if (block.kind === 'bullets') {
-    const bulletPt = Math.max(ts.minBodyPt, ts.bulletPt * scale);
+    const bulletPt = ts.bulletPt;
     let y = y0;
     for (const item of block.items) {
       const merged = mergeAdjacentText(item);
@@ -1052,7 +1080,7 @@ async function renderBlock(slide, block, ctx) {
             runs.push({
               text: x.text,
               options: {
-                fontSize: Math.max(ts.minBodyPt, ts.inlineCodePt * scale),
+                fontSize: ts.inlineCodePt,
                 fontFace: theme.fonts.mono,
                 color: hexNoHash(theme.text.inlineCodeColor),
                 highlight: hexNoHash(theme.blocks.inlineCode.fill),
@@ -1083,7 +1111,7 @@ async function renderBlock(slide, block, ctx) {
     return y - y0;
   }
   if (block.kind === 'code-block') {
-    const codePt = Math.max(ts.minCodePt, ts.codeBlockPt * scale);
+    const codePt = ts.codeBlockPt;
     const lines = block.text.split('\n').length;
     const lineH = (codePt / 72) * LH.code;
     const pad = ly.codePadding;
@@ -1112,7 +1140,7 @@ async function renderBlock(slide, block, ctx) {
     return boxH;
   }
   if (block.kind === 'math-block') {
-    const m = await mathPrep(block.tex, true, scale);
+    const m = await mathPrep(block.tex, true);
     const imW = Math.min(m.wIn, w * 0.92);
     const ratio = imW / m.wIn;
     const imH = m.hIn * ratio;
@@ -1128,13 +1156,16 @@ async function renderBlock(slide, block, ctx) {
     if (block.icon) {
       iconPath = await resolveAssetSrc(block.icon.src, { cacheDir, offline, themeDir });
     }
-    let innerH = 0;
+    const innerW = w - pad * 2 - (iconPath ? iconSize + iconGap : 0);
+    const innerCtxBase = { ...ctx, x0: x0 + pad + (iconPath ? iconSize + iconGap : 0), w: innerW };
+
+    let innerSum = 0;
     for (const b of block.blocks) {
-      innerH +=
-        (await estimateBlockHeight(b, theme, scale, w - pad * 2 - (iconPath ? iconSize + iconGap : 0), {}, mathPrep)) +
-        ly.calloutGap * 0.15;
+      innerSum += (await renderBlock(NOOP_SLIDE, b, { ...innerCtxBase, y0: 0 })) + ly.calloutGap * 0.15;
     }
-    const boxH = Math.max(innerH + pad * 2, (iconPath ? iconSize : 0) + pad * 2);
+    if (block.blocks.length) innerSum -= ly.calloutGap * 0.15;
+
+    const boxH = Math.max(innerSum + pad * 2, (iconPath ? iconSize : 0) + pad * 2);
     slide.addShape(pptx.ShapeType.roundRect, {
       x: x0,
       y: y0,
@@ -1150,7 +1181,6 @@ async function renderBlock(slide, block, ctx) {
       ix += iconSize + iconGap;
     }
     let cy = y0 + pad;
-    const innerW = w - pad * 2 - (iconPath ? iconSize + iconGap : 0);
     for (const b of block.blocks) {
       cy += await renderBlock(slide, b, { ...ctx, x0: ix, y0: cy, w: innerW });
       cy += ly.calloutGap * 0.15;

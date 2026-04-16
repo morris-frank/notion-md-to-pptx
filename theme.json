@@ -76,10 +76,6 @@
       "fill": "#EDE8E2"
     }
   },
-  "fit": {
-    "scales": [1.0, 0.94, 0.89, 0.84],
-    "minScale": 0.84
-  },
   "emojiMap": {
   }
 }
