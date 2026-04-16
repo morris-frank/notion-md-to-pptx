@@ -57,8 +57,8 @@
     "footerCenter": "© Soilytix GmbH - Confidential. All rights reserved. Do not distribute without authorization.",
     "footerFontPt": 9,
     "footerColor": "#F5F2EF",
-    "footerLeftWidth": 1.15,
-    "footerRightWidth": 0.42,
+    "footerMiddleFraction": 0.6,
+    "footerRemainderLeftFraction": 0.62,
     "logoMaxHeight": 0.38,
     "logoSlotWidth": 1.05,
     "logoTitleGap": 0.1

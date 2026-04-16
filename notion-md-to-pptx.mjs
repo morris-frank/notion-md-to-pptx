@@ -65,8 +65,8 @@ function loadTheme(themePath) {
     footerCenter: '',
     footerFontPt: 9,
     footerColor: '#28322e',
-    footerLeftWidth: 1.15,
-    footerRightWidth: 0.42,
+    footerMiddleFraction: 0.6,
+    footerRemainderLeftFraction: 0.62,
     logoMaxHeight: 0.38,
     logoSlotWidth: 1.05,
     logoTitleGap: 0.1,
@@ -727,13 +727,49 @@ function hexNoHash(c) {
   return String(c).replace(/^#/, '');
 }
 
-/** Prefer PNG (native in PPTX); fall back to SVG if present. */
-function resolveLogoPath(themeDir) {
-  const png = path.join(themeDir, 'logo.png');
-  if (fs.existsSync(png)) return png;
-  const svg = path.join(themeDir, 'logo.svg');
-  if (fs.existsSync(svg)) return svg;
+function firstExistingInDir(themeDir, basenames) {
+  for (const name of basenames) {
+    const p = path.join(themeDir, name);
+    if (fs.existsSync(p)) return p;
+  }
   return null;
+}
+
+function slideBackgroundIsDark(theme) {
+  const bg = theme?.slide?.background;
+  if (!bg) return false;
+  const hex = String(bg).replace(/^#/, '');
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return false;
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return lum < 0.45;
+}
+
+/** Dark theme: meta name, filename, or dark slide background (lum). */
+function isDarkThemeStyle(theme, themePath) {
+  const name = String(theme?.meta?.name || '').toLowerCase();
+  if (name.includes('dark')) return true;
+  const stem = path.basename(themePath || '', path.extname(themePath || '')).toLowerCase();
+  if (stem.includes('dark')) return true;
+  return slideBackgroundIsDark(theme);
+}
+
+/**
+ * logo.light.png / logo.dark.png (or .svg) by theme; then logo.png / logo.svg;
+ * then the opposite mode as last resort.
+ */
+function resolveLogoPath(themeDir, theme, themePath) {
+  const dark = isDarkThemeStyle(theme, themePath);
+  const mode = dark ? 'dark' : 'light';
+  const other = dark ? 'light' : 'dark';
+  return (
+    firstExistingInDir(themeDir, [`logo.${mode}.png`, `logo.${mode}.svg`]) ||
+    firstExistingInDir(themeDir, ['logo.png', 'logo.svg']) ||
+    firstExistingInDir(themeDir, [`logo.${other}.png`, `logo.${other}.svg`]) ||
+    null
+  );
 }
 
 function readPngDimensions(filePath) {
@@ -798,9 +834,12 @@ function addSlideChrome(slide, theme, { deckTitle, slideNumber, logoLayout }) {
   const footerH = ly.footerHeight;
   const footY = SLIDE_H - ly.marginBottom - footerH;
   const fw = SLIDE_W - ly.marginLeft - ly.marginRight;
-  const wLeft = Math.min(hf.footerLeftWidth, fw * 0.22);
-  const wRight = Math.min(hf.footerRightWidth, fw * 0.12);
-  const wMid = Math.max(0.2, fw - wLeft - wRight);
+  const midFrac = hf.footerMiddleFraction ?? 0.6;
+  const wMid = fw * midFrac;
+  const rem = fw - wMid;
+  const leftShare = hf.footerRemainderLeftFraction ?? 0.62;
+  const wLeft = rem * leftShare;
+  const wRight = rem - wLeft;
   const fx0 = ly.marginLeft;
   const pt = hf.footerFontPt;
   const color = hexNoHash(hf.footerColor);
@@ -1388,7 +1427,7 @@ async function writePptx(deckAst, theme, outPath, opts) {
   pptx.title = deckAst.title;
 
   const themeDir = path.dirname(opts.themePath);
-  const logoPath = resolveLogoPath(themeDir);
+  const logoPath = resolveLogoPath(themeDir, theme, opts.themePath);
   const logoLayout = computeLogoLayout(logoPath, theme.headerFooter);
   const deckOpts = { ...opts, logoPath, logoLayout };
 
