@@ -1,0 +1,26 @@
+{
+  "name": "notion-markdown-slides",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "pptx": "node notion-md-to-pptx.mjs",
+    "sample": "node notion-md-to-pptx.mjs examples/sample-deck.md --theme theme.json --out output.pptx"
+  },
+  "bin": {
+    "notion-md-to-pptx": "notion-md-to-pptx.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "markdown-it": "^14.1.1",
+    "mathjax-full": "^3.2.1",
+    "pptxgenjs": "^4.0.1"
+  }
+}
