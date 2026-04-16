@@ -527,6 +527,16 @@ function isBlockedFetchUrl(href) {
   }
 }
 
+/** Notion exports often reference /icons/*.svg; fetch from notion.so if missing locally. */
+function tryNotionHostedIconUrl(src) {
+  let p = String(src).trim().replace(/\\/g, '/');
+  if (p.startsWith('./')) p = p.slice(2);
+  if (!/\.(svg|png|jpe?g|webp|gif)$/i.test(p)) return null;
+  if (p.startsWith('/icons/')) return `https://www.notion.so${p}`;
+  if (/^icons\//i.test(p)) return `https://www.notion.so/${p}`;
+  return null;
+}
+
 async function resolveAssetSrc(src, { cacheDir, offline, themeDir }) {
   if (/^https?:\/\//i.test(src)) {
     if (isBlockedFetchUrl(src)) throw new Error(`Blocked URL (local/private): ${src}`);
@@ -555,7 +565,11 @@ async function resolveAssetSrc(src, { cacheDir, offline, themeDir }) {
     return dest;
   }
   const local = path.isAbsolute(src) ? src : path.resolve(themeDir, src);
-  if (!fs.existsSync(local)) throw new Error(`Local asset not found: ${local}`);
+  if (!fs.existsSync(local)) {
+    const notionUrl = tryNotionHostedIconUrl(src);
+    if (notionUrl) return resolveAssetSrc(notionUrl, { cacheDir, offline, themeDir });
+    throw new Error(`Local asset not found: ${local}`);
+  }
   return local;
 }
 

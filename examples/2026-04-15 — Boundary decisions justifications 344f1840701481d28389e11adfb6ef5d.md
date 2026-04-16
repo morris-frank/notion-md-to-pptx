@@ -1,10 +1,12 @@
 # Boundary decisions: justifications
 
 
+<aside>
+<img src="/icons/checkmark-square_orange.svg" alt="/icons/checkmark-square_orange.svg" width="40px" />
 
 ### Canonical domain truth is not UI or orchestration state
 
-
+</aside>
 
 **Final boundary**
 
@@ -19,13 +21,14 @@
 
 ---
 
-## ‏Material
+## Material
 
-
+<aside>
+<img src="/icons/checkmark-square_orange.svg" alt="/icons/checkmark-square_orange.svg" width="40px" />
 
 ### Material provenance is not assay execution
 
-
+</aside>
 
 **Final boundary**
 
@@ -40,13 +43,14 @@
 
 ---
 
-## ‏Material
+## Material
 
-
+<aside>
+<img src="/icons/checkmark-square_orange.svg" alt="/icons/checkmark-square_orange.svg" width="40px" />
 
 ### Spatial assets are not investigation or engagement containers
 
-
+</aside>
 
 **Final boundary**
 
@@ -60,13 +64,14 @@
 
 ---
 
-## ‏Request
+## Request
 
-
+<aside>
+<img src="/icons/checkmark-square_orange.svg" alt="/icons/checkmark-square_orange.svg" width="40px" />
 
 ### Commercial engagement is not the scientific root
 
-
+</aside>
 
 **Final boundary**
 
@@ -81,13 +86,14 @@
 
 ---
 
-## ‏Request
+## Request
 
-
+<aside>
+<img src="/icons/checkmark-square_orange.svg" alt="/icons/checkmark-square_orange.svg" width="40px" />
 
 ### Investigation framing is not the owner of land, material, or commerce
 
-
+</aside>
 
 **Final boundary**
 
@@ -101,13 +107,14 @@
 
 ---
 
-## ‏Work
+## Work
 
-
+<aside>
+<img src="/icons/checkmark-square_orange.svg" alt="/icons/checkmark-square_orange.svg" width="40px" />
 
 ### Planned and requested work is not actual execution
 
-
+</aside>
 
 **Final boundary**
 
@@ -122,13 +129,14 @@
 
 ---
 
-## ‏Evidence
+## Evidence
 
-
+<aside>
+<img src="/icons/checkmark-square_orange.svg" alt="/icons/checkmark-square_orange.svg" width="40px" />
 
 ### Reference corpus is not a project artifact
 
-
+</aside>
 
 **Final boundary**
 
@@ -142,13 +150,14 @@
 
 ---
 
-## ‏Evidence
+## Evidence
 
-
+<aside>
+<img src="/icons/checkmark-square_orange.svg" alt="/icons/checkmark-square_orange.svg" width="40px" />
 
 ### Evidence is not interpretation or publication
 
-
+</aside>
 
 **Final boundary**
 
