@@ -1,0 +1,91 @@
+{
+  "meta": { "name": "Soilytix - Dark", "version": 1 },
+  "slide": { "layout": "LAYOUT_WIDE", "background": "#29322E" },
+  "colors": {
+    "dk1": "#29322E",
+    "dk2": "#423B2D",
+    "lt1": "#FEFFFF",
+    "lt2": "#F5F2EF",
+    "accent1": "#87EA21",
+    "accent2": "#B1813E",
+    "accent3": "#3E4641",
+    "accent4": "#212121",
+    "accent5": "#A02B93",
+    "accent6": "#4EA72E",
+    "hlink": "#467886",
+    "folHlink": "#96607D"
+  },
+  "fonts": {
+    "title": "Inter",
+    "body": "Inter",
+    "mono": "Aptos Mono",
+    "fallbackSans": "Aptos",
+    "fallbackDisplay": "Aptos Display"
+  },
+  "typeScale": {
+    "titlePt": 28,
+    "subheadingPt": 20,
+    "bodyPt": 20,
+    "bulletPt": 18,
+    "inlineCodePt": 18,
+    "codeBlockPt": 20,
+    "calloutHeadingPt": 18,
+    "calloutBodyPt": 18,
+    "minBodyPt": 14,
+    "minCodePt": 14,
+    "minTitlePt": 20
+  },
+  "layout": {
+    "marginLeft": 0.6,
+    "marginRight": 0.6,
+    "marginTop": 0.45,
+    "marginBottom": 0.4,
+    "footerHeight": 0.34,
+    "titleHeight": 0.8,
+    "contentGapAfterTitle": 0.18,
+    "paragraphGap": 0.14,
+    "bulletGap": 0.08,
+    "calloutGap": 0.18,
+    "calloutPadding": 0.16,
+    "calloutIconSize": 0.32,
+    "calloutIconGap": 0.14,
+    "codePadding": 0.14,
+    "mathBlockGap": 0.14,
+    "titleSlideAlign": "center"
+  },
+  "headerFooter": {
+    "footerCenter": "© Soilytix GmbH - Confidential. All rights reserved. Do not distribute without authorization.",
+    "footerFontPt": 9,
+    "footerColor": "#F5F2EF",
+    "footerLeftWidth": 1.15,
+    "footerRightWidth": 0.42,
+    "logoMaxHeight": 0.38,
+    "logoSlotWidth": 1.05,
+    "logoTitleGap": 0.1
+  },
+  "text": {
+    "titleColor": "#FEFFFF",
+    "bodyColor": "#FEFFFF",
+    "mutedColor": "#F5F2EF",
+    "inlineCodeColor": "#FEFFFF",
+    "linkColor": "#467886"
+  },
+  "blocks": {
+    "callout": {
+      "fill": "#3E4641",
+      "border": "#B1813E",
+      "borderWidth": 1.5,
+      "radius": 0.12
+    },
+    "code": {
+      "fill": "#212121",
+      "border": "#3E4641",
+      "borderWidth": 1,
+      "radius": 0.08
+    },
+    "inlineCode": {
+      "fill": "#3E4641"
+    }
+  },
+  "emojiMap": {}
+}
