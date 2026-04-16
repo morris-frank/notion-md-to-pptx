@@ -40,6 +40,7 @@
     "marginRight": 0.6,
     "marginTop": 0.45,
     "marginBottom": 0.4,
+    "footerHeight": 0.34,
     "titleHeight": 0.8,
     "contentGapAfterTitle": 0.18,
     "paragraphGap": 0.14,
@@ -51,6 +52,12 @@
     "codePadding": 0.14,
     "mathBlockGap": 0.14,
     "titleSlideAlign": "center"
+  },
+  "headerFooter": {
+    "footerCenter": "© Soilytix GmbH - Confidential. All rights reserved. Do not distribute without authorization.",
+    "footerFontPt": 9,
+    "logoMaxHeight": 0.38,
+    "logoSlotWidth": 1.05
   },
   "text": {
     "titleColor": "#29322E",
