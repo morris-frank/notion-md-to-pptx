@@ -64,8 +64,12 @@ function loadTheme(themePath) {
   t.headerFooter = {
     footerCenter: '',
     footerFontPt: 9,
+    footerColor: '#28322e',
+    footerLeftWidth: 1.15,
+    footerRightWidth: 0.42,
     logoMaxHeight: 0.38,
     logoSlotWidth: 1.05,
+    logoTitleGap: 0.1,
     ...(t.headerFooter || {}),
   };
   return t;
@@ -718,7 +722,61 @@ function resolveLogoPath(themeDir) {
   return null;
 }
 
-function addSlideChrome(slide, theme, { deckTitle, slideNumber, logoPath }) {
+function readPngDimensions(filePath) {
+  const buf = fs.readFileSync(filePath);
+  if (buf.length < 24) return null;
+  if (buf[0] !== 0x89 || buf[1] !== 0x50 || buf[2] !== 0x4e || buf[3] !== 0x47) return null;
+  const w = buf.readUInt32BE(16);
+  const h = buf.readUInt32BE(20);
+  if (!w || !h) return null;
+  return { w, h };
+}
+
+function readSvgDimensions(filePath) {
+  const s = fs.readFileSync(filePath, 'utf8');
+  const vb = s.match(/viewBox\s*=\s*["']\s*[\d.\s-]+\s+[\d.\s-]+\s+([\d.]+)\s+([\d.]+)\s*["']/i);
+  if (vb) {
+    const w = parseFloat(vb[1]);
+    const h = parseFloat(vb[2]);
+    if (w > 0 && h > 0) return { w, h };
+  }
+  const wm = s.match(/\bwidth\s*=\s*["']([\d.]+)(?:px)?["']/i);
+  const hm = s.match(/\bheight\s*=\s*["']([\d.]+)(?:px)?["']/i);
+  if (wm && hm) {
+    const w = parseFloat(wm[1]);
+    const h = parseFloat(hm[1]);
+    if (w > 0 && h > 0) return { w, h };
+  }
+  return null;
+}
+
+function getLogoIntrinsicSize(logoPath) {
+  const ext = path.extname(logoPath).toLowerCase();
+  if (ext === '.png') return readPngDimensions(logoPath);
+  if (ext === '.svg') return readSvgDimensions(logoPath);
+  return null;
+}
+
+/**
+ * Height = logoMaxHeight; width from aspect ratio (no letterboxing).
+ * titleReserve: space to leave beside slide title so it does not run under the logo.
+ */
+function computeLogoLayout(logoPath, hf) {
+  if (!logoPath) return null;
+  const maxH = hf.logoMaxHeight;
+  const gap = hf.logoTitleGap ?? 0.1;
+  const dims = getLogoIntrinsicSize(logoPath);
+  let logoW;
+  let logoH = maxH;
+  if (dims && dims.h > 0) {
+    logoW = maxH * (dims.w / dims.h);
+  } else {
+    logoW = hf.logoSlotWidth;
+  }
+  return { path: logoPath, w: logoW, h: logoH, titleReserve: logoW + gap };
+}
+
+function addSlideChrome(slide, theme, { deckTitle, slideNumber, logoLayout }) {
   const SLIDE_W = 13.333;
   const SLIDE_H = 7.5;
   const ly = theme.layout;
@@ -726,56 +784,58 @@ function addSlideChrome(slide, theme, { deckTitle, slideNumber, logoPath }) {
   const footerH = ly.footerHeight;
   const footY = SLIDE_H - ly.marginBottom - footerH;
   const fw = SLIDE_W - ly.marginLeft - ly.marginRight;
-  const third = fw / 3;
+  const wLeft = Math.min(hf.footerLeftWidth, fw * 0.22);
+  const wRight = Math.min(hf.footerRightWidth, fw * 0.12);
+  const wMid = Math.max(0.2, fw - wLeft - wRight);
   const fx0 = ly.marginLeft;
   const pt = hf.footerFontPt;
-  const color = hexNoHash(theme.text.mutedColor);
+  const color = hexNoHash(hf.footerColor);
   const face = theme.fonts.body;
 
   slide.addText(deckTitle && deckTitle.trim() ? deckTitle : '\u200b', {
     x: fx0,
     y: footY,
-    w: third,
+    w: wLeft,
     h: footerH - 0.02,
     fontSize: pt,
     fontFace: face,
     color,
     align: 'left',
-    valign: 'top',
+    valign: 'middle',
+    fit: 'shrink',
   });
   slide.addText(hf.footerCenter && hf.footerCenter.trim() ? hf.footerCenter : '\u200b', {
-    x: fx0 + third,
+    x: fx0 + wLeft,
     y: footY,
-    w: third,
+    w: wMid,
     h: footerH - 0.02,
     fontSize: pt,
     fontFace: face,
     color,
     align: 'center',
-    valign: 'top',
+    valign: 'middle',
+    fit: 'shrink',
   });
   slide.addText(String(slideNumber), {
-    x: fx0 + 2 * third,
+    x: fx0 + wLeft + wMid,
     y: footY,
-    w: third,
+    w: wRight,
     h: footerH - 0.02,
     fontSize: pt,
     fontFace: face,
     color,
     align: 'right',
-    valign: 'top',
+    valign: 'middle',
+    fit: 'shrink',
   });
 
-  if (logoPath) {
-    const slotW = hf.logoSlotWidth;
-    const maxH = hf.logoMaxHeight;
+  if (logoLayout) {
     slide.addImage({
-      path: logoPath,
-      x: SLIDE_W - ly.marginRight - slotW,
+      path: logoLayout.path,
+      x: SLIDE_W - ly.marginRight - logoLayout.w,
       y: ly.marginTop,
-      w: slotW,
-      h: maxH,
-      sizing: { type: 'contain', w: slotW, h: maxH },
+      w: logoLayout.w,
+      h: logoLayout.h,
     });
   }
 }
@@ -806,8 +866,8 @@ async function renderDeck(deckAst, theme, pptx, opts) {
   const contentW = SLIDE_W - ly.marginLeft - ly.marginRight;
   const footerH = ly.footerHeight;
   const contentBottom = SLIDE_H - ly.marginBottom - footerH;
-  const logoSlot = opts.logoPath ? theme.headerFooter.logoSlotWidth : 0;
-  const titleW = contentW - logoSlot;
+  const titleReserve = opts.logoLayout?.titleReserve ?? 0;
+  const titleW = contentW - titleReserve;
 
   const mathPathCache = new Map();
   const mathPrep = async (tex, display) => {
@@ -880,7 +940,7 @@ async function renderDeck(deckAst, theme, pptx, opts) {
     addSlideChrome(slide, theme, {
       deckTitle: deckAst.title,
       slideNumber: si + 2,
-      logoPath: opts.logoPath,
+      logoLayout: opts.logoLayout,
     });
   }
 }
@@ -1286,9 +1346,9 @@ function renderTitleSlide(pptx, title, theme, opts) {
   const slide = pptx.addSlide();
   slide.background = { color: hexNoHash(theme.slide.background) };
   const align = ly.titleSlideAlign === 'center' ? 'center' : 'left';
-  const logoSlot = opts.logoPath ? theme.headerFooter.logoSlotWidth : 0;
+  const titleReserve = opts.logoLayout?.titleReserve ?? 0;
   const x = align === 'center' ? SLIDE_W * 0.1 : ly.marginLeft;
-  const w = (align === 'center' ? SLIDE_W * 0.8 : SLIDE_W - ly.marginLeft - ly.marginRight) - logoSlot;
+  const w = (align === 'center' ? SLIDE_W * 0.8 : SLIDE_W - ly.marginLeft - ly.marginRight) - titleReserve;
   slide.addText(title, {
     x,
     y: SLIDE_H * 0.4,
@@ -1303,7 +1363,7 @@ function renderTitleSlide(pptx, title, theme, opts) {
   addSlideChrome(slide, theme, {
     deckTitle: title,
     slideNumber: 1,
-    logoPath: opts.logoPath,
+    logoLayout: opts.logoLayout,
   });
 }
 
@@ -1315,7 +1375,8 @@ async function writePptx(deckAst, theme, outPath, opts) {
 
   const themeDir = path.dirname(opts.themePath);
   const logoPath = resolveLogoPath(themeDir);
-  const deckOpts = { ...opts, logoPath };
+  const logoLayout = computeLogoLayout(logoPath, theme.headerFooter);
+  const deckOpts = { ...opts, logoPath, logoLayout };
 
   renderTitleSlide(pptx, deckAst.title, theme, deckOpts);
   await renderDeck(deckAst, theme, pptx, deckOpts);
